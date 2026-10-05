@@ -13,6 +13,6 @@ def load_plants(path=Path('plants.json')):
 
 
 def due_plants(plants, today, settings):
-    interval = timedelta(days=settings['reminder_days'])
+    interval = timedelta(days=settings['watering_interval_days'])
     return [plant for plant in plants
             if date.fromisoformat(plant['watered_at']) + interval < today]
