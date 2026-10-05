@@ -7,7 +7,7 @@ from sprout.reminders import due_plants, load_plants, load_settings
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path != '/reminders':
+        if self.path != '/api/reminders':
             self.send_error(404)
             return
         settings = load_settings()
