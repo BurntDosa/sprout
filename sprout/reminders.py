@@ -1,11 +1,12 @@
 """Watering dates and reminders, independent of HTTP."""
 from datetime import date, timedelta
 import json
+import yaml
 from pathlib import Path
 
 
-def load_settings(path=Path('settings.json')):
-    return json.loads(path.read_text())
+def load_settings(path=Path('settings.yaml')):
+    return yaml.safe_load(path.read_text())
 
 
 def load_plants(path=Path('plants.json')):
