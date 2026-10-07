@@ -1,1 +1,1 @@
-{"plants": [{"name": "Fern", "watered_at": "2026-10-01"}]}
+{"schema_version": 2, "plants": [{"name": "Fern", "last_watered": "2026-10-01"}]}

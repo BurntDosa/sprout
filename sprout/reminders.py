@@ -10,10 +10,13 @@ def load_settings(path=Path('settings.yaml')):
 
 
 def load_plants(path=Path('plants.json')):
-    return json.loads(path.read_text())['plants']
+    data = json.loads(path.read_text())
+    if data.get('schema_version') != 2:
+        raise ValueError('Run python -m sprout.migrate before starting')
+    return data['plants']
 
 
 def due_plants(plants, today, settings):
     interval = timedelta(days=settings['watering_interval_days'])
     return [plant for plant in plants
-            if date.fromisoformat(plant['watered_at']) + interval <= today]
+            if date.fromisoformat(plant['last_watered']) + interval <= today]
