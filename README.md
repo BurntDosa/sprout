@@ -7,4 +7,8 @@ Install `python -m pip install -r requirements.txt`.
 Settings live in `settings.yaml` (requires PyYAML).
 Run `python -m sprout.server` and request `GET /api/reminders` on localhost:8080.
 Run tests with `python -m unittest discover -s tests`.
+For existing installations, follow `docs/upgrade.md`: rename the interval key,
+switch clients to `/api/reminders`, install PyYAML, then migrate plant data.
+`GET /health` returns 204 without opening the data file.
+
 The tracked `plants.json` is sample data, not a production database.
