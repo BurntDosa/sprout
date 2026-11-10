@@ -1,6 +1,6 @@
 llm:
   provider: openai
-  model: ${CHECKPOINT_MODEL}
+  model: gpt-6-luna
   temperature: 0.7
   max_tokens: 8000
 features:

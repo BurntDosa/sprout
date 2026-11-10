@@ -1,14 +1,7 @@
 # Sprout
 
-Fictional example: a small plant-watering reminder service. Cleo and Ben maintain
-it while Ava is away; Darren is joining the project. No external services.
+Sprout is a small plant-reminder API with fictional authors and history. This public demo shows [Checkpoint](https://github.com/BurntDosa/Checkpoint) running in GitHub Actions with [checkpoint-agent 1.2.6](https://pypi.org/project/checkpoint-agent/1.2.6/).
 
-Install `python -m pip install -r requirements.txt`.
-Settings live in `settings.yaml` (requires PyYAML).
-Run `python -m sprout.server` and request `GET /api/reminders` on localhost:8080.
-Run tests with `python -m unittest discover -s tests`.
-For existing installations, follow `docs/upgrade.md`: rename the interval key,
-switch clients to `/api/reminders`, install PyYAML, then migrate plant data.
-`GET /health` returns 204 without opening the data file.
+Checkpoint writes commit and PR summaries to [`checkpoints/`](checkpoints/), returning-author briefings to [`catchups/`](catchups/), and the onboarding guide to [`MASTER_CONTEXT.md`](MASTER_CONTEXT.md). The October 2026 commits are fictional; the generated documents come from live Checkpoint runs.
 
-The tracked `plants.json` is sample data, not a production database.
+Install with `python -m pip install -r requirements.txt`, then run `python -m unittest discover -s tests`. Run `python -m sprout.server` and request `GET /api/reminders` on localhost:8080. Existing installations should follow [`docs/upgrade.md`](docs/upgrade.md).
