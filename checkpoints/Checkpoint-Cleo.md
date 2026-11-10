@@ -1,3 +1,40 @@
+## Commit `bbfb761` — 2026-11-10
+
+## Context
+The commit adds a regression test for storage-free health checks. The test treats opening plant storage during a `/health` request as a failure, matching the intent in the commit message.
+
+## Changes
+- `tests/test_health.py`: Adds `HealthTests.test_health_does_not_open_plant_storage`. It creates a `sprout.server.Handler` without running its initializer, sets the request path to `/health`, and mocks response methods. It patches `sprout.server.load_plants` to raise if called, then invokes `handler.do_GET()`. The test asserts that the handler sends status `204` and ends the response headers.
+
+## Impact
+- Confirmed: The test fails if `Handler.do_GET()` calls `load_plants` during this `/health` request.
+- Confirmed: The test checks that this request responds with `204` and calls `end_headers()` once.
+- Likely: This guards health checks against depending on plant storage availability, helping keep them usable when storage cannot be opened.
+
+## Priority Rating
+LOW — This is a focused regression test; the diff does not change production behavior.
+
+---
+
+## Commit `bbfb761` — 2026-11-10
+
+## Context
+The commit adds a regression test for the `/health` endpoint. The commit message identifies the goal: guard health checks from opening storage. The test verifies that handling this request does not call `load_plants`.
+
+## Changes
+- `tests/test_health.py` adds `HealthTests.test_health_does_not_open_plant_storage`.
+- The test creates a `Handler` instance without running its initializer, sets its path to `/health`, and mocks `send_response` and `end_headers`.
+- It patches `sprout.server.load_plants` to raise an `AssertionError` if called, then invokes `handler.do_GET()`.
+- It asserts that the handler sends status `204` and ends the response headers.
+
+## Impact
+Confirmed: the test fails if this health-check request attempts to load plant storage, and checks the expected response status and header completion. Likely: this helps prevent storage access from becoming a dependency of health checks during future changes. The diff adds a test only; it does not change the handler implementation.
+
+## Priority Rating
+LOW — this is a focused regression test and introduces no production-code changes.
+
+---
+
 ## Commit `995d5cd` — 2026-11-10
 
 ## Context
