@@ -8,23 +8,15 @@ on:
     types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
     inputs:
-      pr_number:
-        required: true
-        type: string
-      base_sha:
-        required: true
-        type: string
-      head_branch:
-        required: true
-        type: string
-      pr_title:
-        required: true
-        type: string
+      backfill:
+        description: 'Generate checkpoints for up to 50 missing historical commits'
+        type: boolean
+        default: false
 
 jobs:
   # Job 1: Process commits on any branch push
   checkpoint-push:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[skip checkpoint]')
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[skip checkpoint]')) || (github.event_name == 'workflow_dispatch' && inputs.backfill)
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -44,7 +36,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install checkpoint
-        run: pip install checkpoint-agent==1.2.6
+        run: pip install "checkpoint-agent @ git+https://github.com/BurntDosa/Checkpoint@f3d94ae86a9005f34723733143e0347566c3bc9d"
 
       - name: Validate API key
         env:
@@ -64,12 +56,20 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           BEFORE_SHA: ${{ github.event.before }}
           COMMIT_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          BACKFILL: ${{ inputs.backfill }}
         run: |
-          # Backfill the fixture once, on the first setup push. Later pushes use the normal range.
-          if [ ! -d checkpoints ]; then
-            COMMITS=$(git log --reverse --format='%H %ae' HEAD | grep -v 'Checkpoint-Bot@users.noreply.github.com' | awk '{print $1}')
+          if [ "$BACKFILL" = true ] || [ ! -d checkpoints ]; then
+            COMMITS=$(git log --reverse --format='%H %ae' -50 HEAD | grep -viE 'checkpoint-bot@users.noreply.github.com|github-actions\[bot\]@users.noreply.github.com|noreply@github.com' | awk '{print $1}' || true)
+            SKIP_EMAILS=""
           else
-            COMMITS=$(git log --format='%H %ae' "${BEFORE_SHA}..${COMMIT_SHA}" | grep -v 'Checkpoint-Bot@users.noreply.github.com' | grep -v 'noreply@github.com' | awk '{print $1}' || true)
+            if [ "${BEFORE_SHA}" = "0000000000000000000000000000000000000000" ]; then
+              BASE_SHA=$(git merge-base "origin/${DEFAULT_BRANCH}" "${COMMIT_SHA}")
+            else
+              BASE_SHA=${BEFORE_SHA}
+            fi
+            COMMITS=$(git log --reverse --format='%H %ae' "${BASE_SHA}..${COMMIT_SHA}" | grep -viE 'checkpoint-bot@users.noreply.github.com|github-actions\[bot\]@users.noreply.github.com|noreply@github.com' | awk '{print $1}' || true)
+            SKIP_EMAILS=$(git log --format='%ae' "${BASE_SHA}..${COMMIT_SHA}" | sort -u | tr '\n' ',' | sed 's/,$//')
           fi
 
           # Generate checkpoint for each pushed commit
@@ -77,21 +77,20 @@ jobs:
             echo "Generating checkpoints for pushed commits..."
             for commit in $COMMITS; do
               # Skip commits that only touch checkpoint config files
-              CHANGED=$(git diff-tree --root --no-commit-id --name-only -r "$commit" | grep -v -E '^\.(checkpoint\.yaml|github/)')
+              CHANGED=$(git diff-tree --root --no-commit-id --name-only -r "$commit" | grep -v -E '^\.(checkpoint\.yaml|github/)' || true)
               if [ -z "$CHANGED" ]; then
                 echo "  Skipping config-only commit: $commit"
                 continue
               fi
               echo "  Processing commit: $commit"
-              checkpoint --commit "$commit"
+              checkpoint --commit "$commit" || echo "Failed to generate checkpoint for $commit"
             done
           else
             echo "No new commits to process"
           fi
 
           # Update catchup summaries and regenerate MASTER_CONTEXT only if checkpoints exist
-          SKIP_EMAILS=$(git log --format='%ae' ${BEFORE_SHA}..${COMMIT_SHA} 2>/dev/null | sort -u | tr '\n' ',' | sed 's/,$//')
-          if ls checkpoints/Checkpoint-*.md 1>/dev/null 2>&1; then
+          if [ -n "$COMMITS" ] && ls checkpoints/Checkpoint-*.md 1>/dev/null 2>&1; then
             echo "Generating catchup summaries..."
             checkpoint --catchup-all --catchup-skip "$SKIP_EMAILS"
 
@@ -117,7 +116,7 @@ jobs:
 
   # Job 2: Generate per-commit checkpoints and PR summary for open/updated PRs
   checkpoint-pr:
-    if: (github.event_name == 'pull_request' && github.event.action != 'closed') || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened", "synchronize", "reopened"]'), github.event.action)
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -130,7 +129,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.ref || inputs.head_branch }}
+          ref: ${{ github.event.pull_request.head.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -138,7 +137,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install checkpoint
-        run: pip install checkpoint-agent==1.2.6
+        run: pip install "checkpoint-agent @ git+https://github.com/BurntDosa/Checkpoint@f3d94ae86a9005f34723733143e0347566c3bc9d"
 
       - name: Validate API key
         env:
@@ -156,11 +155,11 @@ jobs:
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          PR_TITLE: ${{ github.event.pull_request.title || inputs.pr_title }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || inputs.base_sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
-          HEAD_BRANCH: ${{ github.event.pull_request.head.ref || inputs.head_branch }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
 
           echo "Processing PR #${PR_NUMBER}: ${PR_TITLE}"
@@ -168,14 +167,13 @@ jobs:
 
           # Generate checkpoint for each human-authored commit in the PR range
           COMMITS=$(git log "${BASE_SHA}..${HEAD_SHA}" --format="%H %ae" 2>/dev/null \
-            | grep -v "Checkpoint-Bot@users.noreply.github.com" \
-            | grep -v "noreply@github.com" \
+            | grep -viE 'checkpoint-bot@users.noreply.github.com|github-actions\[bot\]@users.noreply.github.com|noreply@github.com' \
             | awk '{print $1}' || echo "")
           if [ -n "$COMMITS" ]; then
             echo "Generating per-commit checkpoints..."
             for commit in $COMMITS; do
               echo "  Processing commit: $commit"
-              checkpoint --commit "$commit"
+              checkpoint --commit "$commit" || echo "Failed to generate checkpoint for $commit"
             done
           fi
 
@@ -185,8 +183,8 @@ jobs:
 
       - name: Commit PR Summary & Catchups
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
-          HEAD_BRANCH: ${{ github.event.pull_request.head.ref || inputs.head_branch }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           git config --global user.name 'Checkpoint Agent'
           git config --global user.email '268151821+Checkpoint-Bot@users.noreply.github.com'
@@ -219,7 +217,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install checkpoint
-        run: pip install checkpoint-agent==1.2.6
+        run: pip install "checkpoint-agent @ git+https://github.com/BurntDosa/Checkpoint@f3d94ae86a9005f34723733143e0347566c3bc9d"
 
       - name: Validate API key
         env:
@@ -237,14 +235,14 @@ jobs:
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           echo "PR #${PR_NUMBER} merged — regenerating MASTER_CONTEXT.md..."
           checkpoint --onboard
 
       - name: Commit Updated Master Context
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
         run: |
           git config --global user.name 'Checkpoint Agent'
