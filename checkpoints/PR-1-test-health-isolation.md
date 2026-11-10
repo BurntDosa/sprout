@@ -1,40 +1,37 @@
 ## Overview
 
-PR #1 adds a regression test for `/health` requests that guards against opening plant storage. It exists to catch a health-check path that depends on `load_plants`, while confirming that the request returns status `204` and ends the response headers.
+This PR adds a regression test for the `/health` endpoint in `tests/test_health.py`. It verifies that the endpoint returns `204` without calling `sprout.server.load_plants`, guarding against health checks becoming dependent on plant storage being available.
 
 ## Changes by Area
 
 - **Health-check regression coverage — `tests/test_health.py`**
   - Adds `HealthTests.test_health_does_not_open_plant_storage`.
-  - The test constructs a `sprout.server.Handler` instance with `Handler.__new__(Handler)`, sets its path to `/health`, and replaces `send_response` and `end_headers` with mocks.
+  - The test creates a `sprout.server.Handler` instance with `Handler.__new__`, sets its path to `/health`, and mocks `send_response` and `end_headers`.
   - It patches `sprout.server.load_plants` to raise an `AssertionError` if called, then invokes `handler.do_GET()`.
-  - It asserts that `send_response` is called once with `204` and that `end_headers` is called once with no arguments.
-  - The test does not change production code. Its failure condition is specifically a call to `load_plants` during this request.
+  - It asserts that the handler sends status `204` and calls `end_headers()` once. Together, these checks make the expected health-check response explicit and fail the test if the request tries to load plant data.
+
+No production code is changed in the combined diff. The change adds a test around the existing `Handler.do_GET()` behavior rather than modifying that behavior.
 
 ## Commit Walkthrough
 
 1. **`bbfb7610` — `test: guard storage-free health checks`**
-   - Adds the regression test in `tests/test_health.py`.
-   - The test makes storage access observable by replacing `load_plants` with a function that raises, then checks the expected response calls for `/health`.
-   - This is the only commit listed for the PR, so there are no later commits to describe.
+   - Adds `tests/test_health.py` with a focused regression test. The test treats any call to `load_plants` during `/health` handling as a failure and checks the expected status and response-header completion.
 
 ## Architectural Impact
 
-- **Confirmed:** The diff adds test coverage only. It does not modify `Handler`, `Handler.do_GET`, `load_plants`, or any production interface.
-- **Confirmed:** The test treats a call to `sprout.server.load_plants` during the `/health` request as a failure. It also checks that the handler sends status `204` and calls `end_headers`.
-- **Likely:** This guard helps keep health checks usable when plant storage cannot be opened, provided the test’s storage-loading function is the relevant access path.
-- **Likely:** The test documents a separation expectation: responding to `/health` should not require loading plant data. The diff adds no runtime mechanism to enforce that expectation; enforcement comes from the regression test being run.
-- The test uses a handler created without its initializer. This keeps setup focused on the request path and mocked response methods, but means the test does not cover behavior that might depend on attributes normally set during initialization.
+- **Confirmed:** The diff changes the test suite only. It adds no production interfaces, storage operations, request-routing code, or response behavior.
+- **Confirmed:** The new test encodes an expectation that handling `/health` does not call `sprout.server.load_plants` and responds with status `204`, followed by `end_headers()`.
+- **Likely:** This regression check will help keep the health-check path independent of plant-storage loading as `Handler.do_GET()` evolves. That can make failures in plant storage less likely to affect this particular health response, but the test itself does not change runtime behavior or establish broader availability guarantees.
+- **Confirmed scope limitation:** The test exercises `do_GET()` directly on a minimally constructed handler. It does not demonstrate behavior through a live HTTP server, validate response headers beyond the call to `end_headers()`, or cover other paths and request methods.
 
 ## Review Notes
 
-- Confirm that `Handler.do_GET()` routes `/health` through the behavior this test is intended to protect. The test calls `do_GET()` directly, so it does not exercise HTTP server dispatch or a live server.
-- Check that `sprout.server.load_plants` is the storage-loading boundary relevant to health checks. The test detects calls to this patched name; it will not detect other storage access paths.
-- Consider whether constructing the handler with `Handler.__new__(Handler)` is sufficient for the `/health` branch. It deliberately bypasses normal initialization, so the test will expose missing attributes used by that branch, but it does not validate initialization itself.
-- Review the response assertions against the intended contract: the test checks a single `204` response and one `end_headers()` call. It does not assert response headers, response body, or behavior for other request paths.
-- Run the test with the project’s usual test command and verify that the patch target resolves to the function used by `Handler.do_GET()`. If the handler’s storage access is later routed through a different name or module, this guard may need updating.
-- The main risk is limited test coverage rather than a production behavior change: no implementation is changed by this PR, and the regression test protects only the specific storage call and response behavior it asserts.
+- Check that the assertion matches the intended `/health` contract: status `204`, no plant-storage load, and a call to `end_headers()`. If the endpoint’s intended response changes, this test will need to change with it.
+- Confirm that patching `sprout.server.load_plants` is the right seam for detecting plant-storage access in `Handler.do_GET()`. The test specifically catches calls through that imported name; it does not detect storage access through a different function or module.
+- Review the use of `Handler.__new__(Handler)`. It deliberately bypasses initialization so the test can call `do_GET()` with only the fields and methods it sets up. If `do_GET()` later starts relying on additional initialized state, this test may fail; that could signal a behavior change or require a more complete handler setup.
+- Consider the coverage boundary before treating this as an end-to-end health check. The test calls the handler method directly and mocks response methods, so it does not verify socket behavior, HTTP serialization, or integration with server initialization.
+- The patched `load_plants` raises immediately if called. That is appropriate for detecting an unwanted dependency, but the test does not check behavior for other storage failures or validate health-check behavior for paths other than `/health`.
 
 ## Priority Rating
 
-LOW — The PR adds a focused regression test and makes no production changes. It provides useful protection against `/health` calling `load_plants`, but does not broaden coverage to other storage paths or exercise a live HTTP request.
+**LOW** — This is a focused regression test with no production-code changes. It improves coverage of the health-check storage-isolation expectation, but does not alter application behavior or introduce runtime risk.
