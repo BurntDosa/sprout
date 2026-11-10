@@ -12,3 +12,6 @@ class ReminderTests(unittest.TestCase):
         self.assertEqual([p['name'] for p in due], ['Fern'])
         due = due_plants(plants, date(2026, 10, 9), {'watering_interval_days': 7})
         self.assertEqual([p['name'] for p in due], ['Fern', 'Ivy'])
+
+    def test_empty_collection_has_no_reminders(self):
+        self.assertEqual(due_plants([], date(2026, 10, 9), {'watering_interval_days': 7}), [])
