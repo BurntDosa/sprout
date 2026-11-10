@@ -5,12 +5,12 @@ on:
     branches:
       - '**'
   pull_request:
-    types: [opened, synchronize, closed]
+    types: [opened, synchronize, reopened, closed]
 
 jobs:
   # Job 1: Process commits on any branch push
   checkpoint-push:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[skip checkpoint]')
     runs-on: ubuntu-latest
     permissions:
       contents: write
