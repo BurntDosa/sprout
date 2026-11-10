@@ -36,7 +36,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install checkpoint
-        run: pip install "checkpoint-agent @ git+https://github.com/BurntDosa/Checkpoint@f3d94ae86a9005f34723733143e0347566c3bc9d"
+        run: pip install "checkpoint-agent @ git+https://github.com/BurntDosa/Checkpoint@a0f2e5c5688e4e924f691252e94cb4ceaa07a1df"
 
       - name: Validate API key
         env:
@@ -137,7 +137,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install checkpoint
-        run: pip install "checkpoint-agent @ git+https://github.com/BurntDosa/Checkpoint@f3d94ae86a9005f34723733143e0347566c3bc9d"
+        run: pip install "checkpoint-agent @ git+https://github.com/BurntDosa/Checkpoint@a0f2e5c5688e4e924f691252e94cb4ceaa07a1df"
 
       - name: Validate API key
         env:
@@ -217,7 +217,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install checkpoint
-        run: pip install "checkpoint-agent @ git+https://github.com/BurntDosa/Checkpoint@f3d94ae86a9005f34723733143e0347566c3bc9d"
+        run: pip install "checkpoint-agent @ git+https://github.com/BurntDosa/Checkpoint@a0f2e5c5688e4e924f691252e94cb4ceaa07a1df"
 
       - name: Validate API key
         env:
