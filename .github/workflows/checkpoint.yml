@@ -10,7 +10,7 @@ on:
 jobs:
   # Job 1: Process commits on any branch push
   checkpoint-push:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
