@@ -1,21 +1,19 @@
-## Commit `f15c0ae` — 2026-11-10
+## Commit `f15c0ae` — 2026-10-02
 
-## Context (background on why this change exists — infer from the commit message and diff)
+## Context
+This change starts Sprout as a small, local plant-watering reminder service. The README describes it as a fictional example maintained by Cleo and Ben while Ava is away, with Darren joining, and says it uses no external services. The service reads a tracked sample plant record and settings from JSON files; the README explicitly says `plants.json` is not a production database.
 
-The commit starts Sprout, a small local plant-watering reminder service. The README describes it as a fictional project maintained by Cleo and Ben while Ava is away, with Darren joining, and says it uses no external services. The tracked plant data is explicitly sample data, not a production database. This change establishes the reminder calculation and a read-only HTTP entry point, rather than a complete plant-management system.
+## Changes
+- `sprout/reminders.py` separates reminder logic from HTTP handling. `load_settings()` and `load_plants()` read JSON from configurable paths, defaulting to `settings.json` and `plants.json`. `due_plants()` selects plants whose watering date plus the configured `reminder_days` interval is earlier than the supplied date.
+- `sprout/server.py` adds the read-only HTTP API. `Handler.do_GET()` returns the due plants as JSON for `/reminders` and sends 404 for other paths. The module entry point starts an `HTTPServer` bound to `127.0.0.1` on the configured port.
+- `settings.json` sets a seven-day reminder interval and port 8080. `plants.json` supplies a sample Fern record last watered on 2026-10-01.
+- `README.md` documents the server and test commands. `.gitignore` excludes Python cache files, virtual environments, environment files, checkpoint and catch-up directories, and `MASTER_CONTEXT.md`. `sprout/__init__.py` establishes the package.
 
-## Changes (grouped by file with specific function/class names)
-
-- `sprout/reminders.py` separates reminder logic from HTTP handling. `load_settings()` reads `settings.json`, and `load_plants()` reads the `plants` array from `plants.json`. `due_plants(plants, today, settings)` returns plants whose `watered_at` date plus `reminder_days` is earlier than `today`; a plant is not returned on the exact threshold date.
-- `sprout/server.py` adds the `Handler` class. Its `do_GET()` serves JSON for `/reminders` and returns 404 for other paths. The module entry point starts `HTTPServer` on `127.0.0.1` using the configured port.
-- `settings.json` sets the reminder interval to 7 days and port to 8080. `plants.json` provides a sample Fern watered on 2026-10-01.
-- `README.md` documents how to start the server and run `python -m unittest discover -s tests`. The diff adds no test files.
-- `sprout/__init__.py` establishes the package. `.gitignore` excludes Python cache files, virtual environments, `.env`, and named local context directories/files.
-
-## Impact (confirmed downstream effects from the diff; mark inferred impacts with 'Likely:')
-
-Running `python -m sprout.server` starts a local HTTP server, and `GET /reminders` returns a JSON array of plants past the configured watering interval. Requests to other paths receive 404. The endpoint does not modify plant data. Likely: because the default JSON paths are relative, starting the service outside the project directory may prevent it from finding its data and settings files.
+## Impact
+- Confirmed: Running `python -m sprout.server` starts the HTTP service on localhost:8080 with the checked-in settings. `GET /reminders` returns a JSON array of plants due under the configured date rule; other paths receive 404.
+- Confirmed: The endpoint only reads plant and settings data; this change adds no write path or external-service integration.
+- Likely: A caller can use the endpoint to display reminders, but the service does not itself send notifications or update watering dates.
+- The README gives a unittest discovery command, but this diff adds no test files.
 
 ## Priority Rating
-
-MEDIUM — This provides a working local reminder endpoint, but it is read-only and uses sample JSON data rather than a production persistence layer.
+MEDIUM — This establishes a usable local reminder endpoint, but it is read-only and relies on sample JSON data rather than production storage or notification delivery.

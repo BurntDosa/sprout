@@ -1,29 +1,32 @@
 # While You Were Gone — Since October 02, 2026
 
-Sprout has had several compatibility changes: the reminders route moved, settings moved from JSON to YAML, and plant data now requires a one-time migration to schema v2. You also have a dedicated health endpoint, corrected due-today reminder behavior, and updated upgrade instructions; handle the config and data migrations before starting an existing installation.
+Since October 2, Sprout’s reminder API and configuration changed, and existing plant data now needs a one-time migration before reminders can load it. You also have a lightweight health endpoint, stronger reminder and migration tests, and updated docs that frame the repository as a Checkpoint demo. The latest changes mostly update documentation and allow generated Checkpoint files to be tracked in Git; they do not change application behavior.
 
 ## Critical Changes (Must-Read)
 
-- **Migrate existing plant data before startup.** `load_plants` now rejects files without `schema_version: 2`. Run `python -m sprout.migrate` once on existing v1 data. The migration renames each plant’s `watered_at` field to `last_watered`, adds the schema marker, saves the original bytes to a `.json.bak` file, and replaces the data through a temporary file. It skips v2 files; unsupported schema versions raise `ValueError`. The upgrade guide says to stop the service before migrating.
-- **Update reminders clients.** The accepted route is now `GET /api/reminders`; `GET /reminders` returns 404. Other paths also return 404, except for the new `/health` endpoint.
-- **Update settings before running the service.** Rename `reminder_days` to `watering_interval_days`. Settings are now read from `settings.yaml`, not `settings.json`, and parsing requires PyYAML. Install the project requirements and ensure the YAML file is present.
-- **Check existing Git ignore behavior.** The repository no longer ignores files solely because they are under `checkpoints/` or `catchups/`, or because they are named `MASTER_CONTEXT.md`. Matching local files may now show up in `git status` and can be staged unless another ignore rule excludes them.
+- **Migrate plant data before starting reminders.** Plant storage is now schema v2: the top-level data must have `schema_version: 2`, and each plant’s watering date uses `last_watered` instead of `watered_at`. `load_plants()` rejects data that hasn’t been migrated. Stop the service and run `python -m sprout.migrate` once. The migration backs up the original as `.json.bak` and uses a temporary file before replacing it. It accepts v1 or unversioned data, returns `False` for data already at v2, and raises `ValueError` for other schema versions. It will not overwrite an existing backup.
+
+- **Update reminder clients to `GET /api/reminders`.** The old `/reminders` path now returns 404, with no compatibility route shown. Only `/api/reminders` reaches reminder handling; other paths return 404.
+
+- **Update settings and install the new dependency.** Settings moved from `settings.json` to `settings.yaml`, parsed with `yaml.safe_load`. Install dependencies with `python -m pip install -r requirements.txt`; `requirements.txt` pins `PyYAML==6.0.3`. The settings key is now `watering_interval_days`, not `reminder_days`. The documented values remain 7 days and port 8080. Old key names can cause a `KeyError` when reminders read the interval.
+
+- **Due plants are now included on their due date.** The comparison changed from strictly before today to on or before today. Keep this boundary behavior in mind when checking reminder results.
 
 ## New Features & Additions
 
-- `GET /health` returns HTTP 204 with no response body. The server handles it before the reminders route and does not load plant storage, so it can check server responsiveness without depending on plant data.
-- Reminder selection now includes plants due today as well as overdue plants. The due-date comparison changed from strict “before today” to “today or earlier.” New test coverage checks the due-today, overdue, and future-date cases.
-- `python -m sprout.migrate` provides the one-time v1-to-v2 data migration. Added tests cover a successful migration, preservation of the original file in the backup, safe repeated migration, and refusing to overwrite an existing backup. The checkpoints describe added tests, not whether they have been run.
+- `GET /health` returns HTTP 204 with no response body. It exits before reminder handling and does not call `due_plants`, `load_plants`, or `load_settings`, so the check does not require plant storage to be readable. Paths other than `/health` and `/api/reminders` still return 404.
+- `sprout.migrate` adds a command-line migration path for plant data. Regression tests check that migration preserves the original bytes in the backup, changes `watered_at` to `last_watered`, safely handles a repeat run, and refuses to overwrite an existing backup.
+- Reminder tests now cover due-today, overdue, and future plants. With a seven-day interval, the test expects only Fern on October 8, 2026, and Fern and Ivy on October 9.
 
 ## Refactors & Structural Changes
 
-- Plant storage now has an explicit schema version. The checked-in sample data and reminder tests use `schema_version: 2` and `last_watered`; `due_plants` reads `last_watered` when calculating reminder dates.
-- Settings moved from `settings.json` to `settings.yaml`. The YAML file retains the existing values: a seven-day watering interval and port 8080.
-- The README now presents Sprout as a plant-reminder API and a public demo of Checkpoint, and points to generated Checkpoint artifacts and the upgrade guide. It identifies the October 2026 project history as fictional. The README no longer includes some endpoint, settings, and data details, so use `docs/upgrade.md` for upgrade steps.
-- The new Git ignore behavior allows Checkpoint-related documents to be tracked. The commit changes ignore rules only; it does not alter application or CI behavior.
+- The plant data format is now explicit rather than implicitly v1: storage has a `schema_version`, and the watering-date field is `last_watered`. The sample `plants.json` was updated to match.
+- The README was rewritten to present Sprout as a public Checkpoint demo. It points readers to generated material in `checkpoints/`, `catchups/`, and `MASTER_CONTEXT.md`, while retaining shorter installation, test, server, and upgrade instructions. It says the October 2026 commits are fictional and the generated documents come from live Checkpoint runs. The README’s Checkpoint reference now links to a specific commit, `f3d94ae`, rather than the `checkpoint-agent 1.2.6` package page; the changes shown do not modify or verify a GitHub Actions workflow.
+- `.gitignore` no longer excludes `checkpoints/`, `catchups/`, or `MASTER_CONTEXT.md`. Git can now notice files at those paths, but removing ignore rules does not automatically add existing files to version control. Python cache files, `.venv/`, and `.env` remain ignored.
+- Upgrade notes and README guidance document the settings rename, API route change, PyYAML installation, plant-data migration, and health endpoint behavior.
 
 ## New Dependencies & Config Changes
 
-- `requirements.txt` now pins `PyYAML==6.0.3`. Install dependencies with `python -m pip install -r requirements.txt`; `load_settings()` defaults to `settings.yaml` and parses it with `yaml.safe_load`.
-- Replace `settings.json` with `settings.yaml` and use `watering_interval_days` instead of `reminder_days`. The configured interval remains seven days, and the port remains 8080.
-- The README’s upgrade sequence is to rename the setting, switch clients to `GET /api/reminders`, install PyYAML, then migrate plant data. It also clarifies that tracked `plants.json` is sample data, not a production database.
+- Add `PyYAML==6.0.3` by installing `requirements.txt`. `load_settings()` now defaults to `settings.yaml` and parses YAML. Custom paths passed to the function must also contain YAML-formatted settings.
+- Replace `settings.json` with `settings.yaml`. The configured interval remains seven days and the port remains 8080, but the interval key is `watering_interval_days`.
+- Migrate existing `plants.json` data to schema v2 before reminder loading. The v2 format requires `schema_version: 2` and `last_watered`; the migration command preserves the original in a `.json.bak` file.

@@ -1,63 +1,131 @@
 # Master Context
 
-Sprout is a small plant-reminder API. It reads plant records and settings from local files, calculates which plants have passed their watering interval, and exposes the result through a local HTTP server. It is deliberately a reminder service, not a full plant-management system: the reminders endpoint is read-only, and the tracked `plants.json` file contains sample data rather than a production database. Sprout’s repository also serves as a public demo of Checkpoint: the README describes generated commit and PR summaries, returning-author briefings, and onboarding material, and identifies the October 2026 project history as fictional. For an engineer joining the application work, the core path is straightforward: understand the file-based inputs, the reminder calculation, the HTTP handler, and the migration required for older plant data.
+Sprout is a small, read-only plant-watering reminder API. It loads plant records and reminder settings from local files, calculates which plants are due, and exposes the results over HTTP. It does not send notifications or update watering dates. Its checked-in plant data is a sample, not a production database.
+
+The repository also serves a second purpose: it is a public demo of Checkpoint running in GitHub Actions. Checkpoint produces commit and PR summaries in `checkpoints/`, returning-author briefings in `catchups/`, and this onboarding guide in `MASTER_CONTEXT.md`. The README says the October 2026 project history is fictional; the generated documents come from live Checkpoint runs. Treat the service and its history as a demo, and use the current README and upgrade notes when operating it.
+
+The core path through the application is deliberately small: configuration and plant records go into reminder logic; an HTTP handler exposes that logic; tests cover reminder calculation and migration. There is no documented write API, notification integration, production storage layer, or external service required to run the reminder API.
 
 ## Architecture Overview
 
-Sprout has a small, file-backed architecture. The `sprout` package contains the application code: `reminders.py` handles reminder-related logic, `server.py` exposes HTTP routes, and `migrate.py` upgrades plant data. `plants.json` is the tracked sample data file. `settings.yaml` is the configuration file present in the repository, and `requirements.txt` pins PyYAML. The tests live in `tests/`, with separate coverage for reminders and migration.
+The source package is `sprout/`. Its responsibilities are split across three modules:
 
-The main data flow is:
+- `sprout/reminders.py` owns data loading and reminder calculation. The checkpoint history names `load_settings()` and `load_plants()` as the loaders, and `due_plants()` as the function that selects records due for watering. Keeping these operations outside the HTTP handler gives the calculation and file-loading logic a place to be tested independently of HTTP.
+- `sprout/server.py` provides the HTTP interface. Its `Handler.do_GET()` serves the health and reminder routes. The module entry point starts the server; the documented run command is `python -m sprout.server`.
+- `sprout/migrate.py` upgrades plant data from the older storage format. Its `migrate(path=Path('plants.json'))` function handles the file conversion, and running the module directly invokes the migration.
 
-1. The server receives a request.
-2. `Handler.do_GET()` checks the requested path.
-3. For `GET /api/reminders`, the reminder path loads settings and plant records, then calls `due_plants(...)` to determine which plants are due.
-4. The handler returns the resulting data as JSON.
-5. For `GET /health`, the handler responds with HTTP 204 and no body. This route returns before the reminder path, so it does not load plant storage.
-6. Requests for other paths receive 404.
+At a high level, the reminder request flow is:
 
-The reminder calculation has an explicit threshold rule. `due_plants(plants, today, settings)` compares each plant’s `last_watered` date plus the configured reminder interval with `today`. A plant becomes due only when that threshold is earlier than today; it is not due on the exact threshold date. The schema change from v1 to v2 renamed the watering-date field from `watered_at` to `last_watered`. `load_plants` rejects files that are not marked as schema version 2, so the migration step is part of operating an installation with older data.
+```text
+GET /api/reminders
+        |
+        v
+sprout.server: Handler.do_GET()
+        |
+        v
+sprout.reminders: load settings and plant records
+        |
+        v
+sprout.reminders: due_plants(...)
+        |
+        v
+JSON response
+```
 
-`migrate.py` provides that upgrade path. Its `migrate` function treats a file without a schema version as v1, converts v1 plant records to the v2 field name, and sets `schema_version` to 2. It returns `False` for data already at v2 and raises `ValueError` for other unsupported versions. For a v1 file, it writes the original bytes to a `.json.bak` backup before replacing the source via a temporary `.json.tmp` file. An existing backup prevents the migration from overwriting it.
+The health check takes a separate, shorter path. `GET /health` returns HTTP 204 with no body and exits without calling `due_plants()`, `load_plants()`, or `load_settings()`. That means the route checks whether the HTTP server responds, not whether configuration and plant storage are readable. Requests to paths other than `/health` and `/api/reminders` return 404, according to the checkpoint history.
 
-The current README says to run the service with `python -m sprout.server`, then request `GET /api/reminders` on localhost:8080. The checkpoints record an earlier route name, `/reminders`, and an earlier settings filename, `settings.json`; use the current README and repository contents rather than those historical details. The current file listing contains `settings.yaml`, and the dependency manifest includes PyYAML.
+The data flow is file-based. The repository contains `plants.json` and `settings.yaml`. The checkpoint history documents `plants.json` as the plant-record file and describes the reminder settings as loaded from a configurable path. Earlier revisions used `settings.json`; the current tree has `settings.yaml`, and the README’s upgrade guidance says to install PyYAML. Confirm the current settings format and keys when changing configuration rather than assuming the historical JSON format still applies.
 
-No Mermaid diagrams were supplied in the provided materials. The dependency graph and class hierarchy are marked as disabled, so the architecture is described here in prose rather than represented with diagrams.
+Plant storage has an explicit version boundary. Version 2 uses a top-level `schema_version` and the plant date field `last_watered`. The prior v1 shape used `watered_at`; unversioned files are treated as v1 by the migration. `load_plants()` requires schema version 2, so old data must be migrated before the reminder service can load it. `due_plants()` compares each plant’s `last_watered` date against the configured reminder interval and the supplied date. The checkpoint history records a seven-day interval in an earlier settings file; consult the current configuration for the active value.
+
+`sprout/migrate.py` is deliberately separate from serving reminders. For v1 input, it makes a `.json.bak` copy of the original bytes, writes converted data through a `.json.tmp` file, and replaces the source. It returns `False` if the file is already v2 and raises `ValueError` for unsupported schema versions. Tests in `tests/test_migration.py` cover the backup, repeat-call, and existing-backup behavior. Reminder calculation tests live in `tests/test_reminders.py`.
+
+There are no Mermaid diagrams in the supplied material. The dependency and class-hierarchy diagrams are explicitly disabled in the provided configuration, so the flow above is a text summary rather than a generated diagram.
 
 ## Key Decision Log
 
-1. **Keep reminder calculation separate from HTTP handling.** `sprout/reminders.py` owns loading and due-date logic, while `sprout/server.py` owns request handling through `Handler`. The checkpoint describes this as separating reminder logic from HTTP handling. The resulting responsibilities are clear: the calculation can be exercised independently, and the server presents it over HTTP. **Rationale:** the checkpoint says this change establishes reminder calculation and a read-only HTTP entry point, rather than a complete plant-management system.
+1. **Keep reminder logic separate from HTTP handling.** `sprout/reminders.py` contains loading and due-date logic; `sprout/server.py` handles requests. The checkpoint describes this separation as the structure of the service. It makes the HTTP layer a consumer of the reminder logic rather than the owner of it. Rationale for this separation is documented as separating reminder logic from HTTP handling.
 
-2. **Use a read-only local API over sample JSON files.** The server exposes reminders without modifying plant records, and the README explicitly describes `plants.json` as sample data rather than a production database. The HTTP server listens on `127.0.0.1` in the original implementation; the current README directs readers to localhost:8080. **Rationale:** the initial project description calls Sprout a small local reminder service and says it uses no external services. No rationale for a production persistence layer is documented.
+2. **Expose reminders through a read-only HTTP API.** The API returns due plants but does not provide a documented write route or notification delivery. The initial checkpoint explicitly confirms that the endpoint only reads data and adds no write path or external-service integration. The README documents `GET /api/reminders` as the route to use. Rationale not documented.
 
-3. **Make the storage schema explicit and require migration.** Plant data now carries `schema_version: 2`, and the watering-date key is `last_watered`. `load_plants` rejects older or unmarked files instead of silently treating them as v2. `migrate` preserves the original bytes in a backup before replacing the file. **Rationale:** the checkpoint says the schema marker and renamed field make the format explicit, and the upgrade notes require existing v1 data to be migrated before the service starts.
+3. **Version plant data and require migration before loading old files.** The v2 format adds `schema_version` and renames `watered_at` to `last_watered`. The loader rejects data that has not been migrated. The upgrade notes say to stop the service and run the migration once, avoiding the service reading storage during replacement. This gives maintainers a clear upgrade step and leaves a backup of the original file. Rationale for stopping the service during replacement is documented in the upgrade guidance.
 
-4. **Add a health route that bypasses data loading.** `Handler.do_GET()` handles `/health` before the reminders route and returns 204 without a response body. It does not enter the reminder path or open plant storage. **Rationale:** the checkpoint documents the endpoint as a way to report that the server is responding without entering the path that loads plant data.
+4. **Use a lightweight health endpoint that bypasses storage.** `GET /health` returns 204 without loading settings or plant records. The checkpoint describes this as allowing a health response without reading plant storage. Rationale not documented beyond the stated behavior.
+
+5. **Keep the plant file as demo data, not production storage.** The README and checkpoint describe the sample record as an example and explicitly say `plants.json` is not a production database. Rationale not documented.
 
 ## Gotchas & Tech Debt
 
-- **Older plant files need migration.** `load_plants` requires schema version 2. A v1 file with `watered_at`, or an unmarked file, must be migrated before the reminders path can load it. The documented procedure is in `docs/upgrade.md`.
-- **Migration protects existing backups.** If the `.json.bak` path already exists, `migrate` raises `FileExistsError` rather than overwriting that backup. The migration tests explicitly verify that the source remains unchanged in this case. Check for an existing backup before attempting a migration.
-- **The due-date boundary is strict.** A plant is not returned on the exact date when its watering interval expires; it is returned only after that date. `ReminderTests.test_due_today_and_overdue_but_not_future` covers due, overdue, and future cases. Keep this boundary in mind when changing reminder behavior.
-- **The health route does not validate plant data.** It confirms that the server responds, but it deliberately bypasses the reminder path and plant storage. A successful health response does not establish that the plant file is readable or migrated.
-- **Relative data paths may depend on the working directory.** The initial checkpoint notes that the default JSON paths are relative and that starting outside the project directory may prevent the service from finding its data and settings files. Treat this as a known operational risk when changing how the service is launched.
-- **Documentation has changed over time.** Checkpoints describe the original `/reminders` route and `settings.json`; later documentation names `/api/reminders`, and the repository now contains `settings.yaml`. The README’s upgrade checklist also calls out renaming the interval key and installing PyYAML. Confirm the current configuration format before applying instructions written for an older version.
+- **Old plant files will not load until migrated.** `load_plants()` requires `schema_version == 2`. Older v1 or unversioned files need `python -m sprout.migrate` before the reminder service can use them. The migration changes `watered_at` to `last_watered`.
+
+- **Plan the migration as an offline step.** The upgrade notes say to stop the service before running the migration. The migration writes a backup and a temporary file before replacing the source; do not treat it as a live, concurrent update.
+
+- **A pre-existing backup blocks migration.** The migration tests specify that an existing `.json.bak` file must not be overwritten: `migrate()` raises `FileExistsError`, and the source remains unchanged. Resolve that situation deliberately rather than deleting a backup without checking it.
+
+- **The health check is not a storage check.** `/health` can return 204 even when plant data or settings cannot be loaded, because the route bypasses those loaders. A successful health response does not establish that `/api/reminders` will succeed.
+
+- **The API path changed.** The README points callers to `/api/reminders`. Checkpoint history records an earlier `/reminders` path and subsequent upgrade guidance to switch clients to `/api/reminders`. Do not assume the historical path remains valid.
+
+- **Configuration has changed across revisions.** The history describes an earlier `settings.json` and documents a settings rename; the current repository tree contains `settings.yaml`, and the README says to install PyYAML. Check the current file and upgrade notes before carrying forward older configuration or scripts.
+
+- **Sample data is not an operational database.** `plants.json` is tracked sample data. The service is read-only, so it does not record watering actions or provide notification delivery. Any workflow needing those capabilities must not assume they exist here.
+
+- **The demo’s automation description is not proof of workflow contents.** The README presents the repository as a Checkpoint demo in GitHub Actions. A checkpoint notes that its documentation diff did not show a GitHub Actions workflow. The supplied file tree also does not list a workflow file, so this document cannot describe its implementation.
 
 ## Dependency Map
 
-- **Python standard library:** The application uses Python’s built-in HTTP server machinery, JSON-backed plant data, and a local filesystem migration. The migration tests also use `tempfile.TemporaryDirectory`, `pathlib.Path`, and JSON parsing to isolate and check test data. There is no documented runtime dependency on a database or a remote plant-data service.
-- **PyYAML 6.0.3:** Listed in `requirements.txt`. The README’s upgrade checklist says to install PyYAML, and the repository contains `settings.yaml`. Treat it as the configuration-related external library. The provided materials do not specify the exact current configuration keys.
-- **Local HTTP clients:** The service exposes `GET /api/reminders` and `GET /health`. These are the application’s HTTP interface; no remote API provider is documented.
-- **Checkpoint and `checkpoint-agent 1.2.6`:** The README describes Checkpoint running in GitHub Actions and identifies `checkpoint-agent 1.2.6`. This is part of the repository’s public demo and generated documentation workflow, not a dependency of the reminder request path.
-- **GitHub Actions:** The README says the public demo shows Checkpoint running in GitHub Actions. The provided file structure does not list a workflow file, so its exact configuration is not described here.
-- **External runtime services:** The initial checkpoint says Sprout uses no external services. The reminder server’s documented operation is local and file-based.
+- **Python standard library:** The service uses Python’s HTTP server, JSON handling, and test tooling as described by the checkpoints and README. `python -m sprout.server` starts the API; `python -m unittest discover -s tests` runs the tests. No separate application server dependency is listed.
+
+- **PyYAML 6.0.3:** `requirements.txt` pins `PyYAML==6.0.3`. The README’s upgrade guidance specifically says to install PyYAML. Its role is associated with the current YAML settings file; verify the exact loading behavior in the current source before changing configuration.
+
+- **Local plant storage:** `plants.json` holds the sample plant records. It is not an external service and is explicitly not a production database. The migration module also defaults to this path.
+
+- **Local settings:** `settings.yaml` is present in the repository. Settings determine reminder behavior, and the checkpoint history documents a configurable interval and port. Confirm the current keys and values in the file before relying on historical settings details.
+
+- **Checkpoint:** The README links to Checkpoint’s `fix/demo-findings` branch at commit `f3d94ae` and says Checkpoint runs in GitHub Actions to produce repository documents. That is the demo/documentation side of the repository, not a runtime dependency of the plant reminder API. The supplied files do not describe the workflow’s implementation.
+
+- **External services and notification APIs:** None are required or documented for the reminder API. The checkpoint confirms that the service adds no external-service integration and does not itself send notifications.
 
 ## Getting Started
 
-1. **Review the project guidance.** Read `README.md` for the current project framing and basic commands. Read `docs/upgrade.md` before working with an existing installation or changing the plant-data format. Treat `checkpoints/` and `catchups/` as generated project-history and briefing material, not as application modules.
-2. **Set up Python dependencies.** Run `python -m pip install -r requirements.txt` from the repository. This installs the pinned PyYAML dependency.
-3. **Check the local data and configuration.** Inspect `plants.json` and `settings.yaml` before changing reminder behavior. The tracked plant data is sample data, not a production database. The upgrade documentation identifies a configuration interval-key rename, but the exact key names are not present in the provided materials. **[Verify]** Confirm the expected key in the current `settings.yaml` and the loader before editing or creating configuration.
-4. **Run the tests.** Use the README command: `python -m unittest discover -s tests`. `tests/test_reminders.py` covers due-date behavior; `tests/test_migration.py` checks backup preservation, repeat migration, and protection against overwriting an existing backup.
-5. **Migrate existing v1 data when needed.** If you are working with an older plant file that lacks `schema_version` and uses `watered_at`, stop the service and follow `docs/upgrade.md`. The documented command is `python -m sprout.migrate`; the migration defaults to `plants.json`. It creates a `.json.bak` backup and returns `False` when the data is already v2. Do not assume the tracked sample file represents an installation’s data.
-6. **Start the server.** Run `python -m sprout.server` from the project directory. The README documents localhost:8080. Starting from the project directory also avoids the relative-path issue noted in the checkpoint.
-7. **Check the endpoints.** Request `GET /api/reminders` on localhost:8080 to exercise the data-loading and reminder calculation path. Request `GET /health` to check server responsiveness; a successful response is HTTP 204 with no body and does not verify that plant data can be loaded.
-8. **Before changing compatibility behavior, check the upgrade path.** The documented upgrade sequence calls out the interval-key rename, switching clients to `GET /api/reminders`, installing PyYAML, and migrating plant data. Follow `docs/upgrade.md` for existing installations rather than relying on historical checkpoint descriptions of earlier filenames or routes.
+1. **Check the project instructions.** Read `README.md` and `docs/upgrade.md` before running or changing an existing installation. The README identifies the service as a demo and points maintainers to the upgrade guide.
+
+2. **Use a Python environment.** The repository’s ignore rules, as described by the checkpoint, exclude `.venv/`. Create and activate a virtual environment using your team’s usual Python workflow. **[Verify]** The supplied README does not specify a Python version or provide environment-creation commands.
+
+3. **Install dependencies.** Run the documented command:
+
+   ```sh
+   python -m pip install -r requirements.txt
+   ```
+
+   This installs the pinned PyYAML dependency. **[Verify]** The supplied materials do not state a Python version constraint.
+
+4. **Inspect the current data and settings.** Look at `plants.json` and `settings.yaml` before starting the server. Confirm that plant data has `schema_version` 2 and uses `last_watered`. Check the settings file for the active interval and port rather than copying values from an older checkpoint.
+
+5. **Migrate old plant data if needed.** If an existing plant file is v1 or unversioned, stop the service and run:
+
+   ```sh
+   python -m sprout.migrate
+   ```
+
+   The migration creates a `.json.bak` backup and refuses to overwrite an existing backup. Review `docs/upgrade.md` and preserve the backup according to your operational practices.
+
+6. **Run the tests.** Use the README command:
+
+   ```sh
+   python -m unittest discover -s tests
+   ```
+
+   The suite includes `tests/test_reminders.py` for reminder behavior and `tests/test_migration.py` for migration safety.
+
+7. **Start the API.** Run:
+
+   ```sh
+   python -m sprout.server
+   ```
+
+   The documented default is localhost on port 8080. **[Verify]** The available checkpoint describes that default for an earlier configuration revision; confirm the active port in `settings.yaml`.
+
+8. **Check the routes.** Request `GET /api/reminders` on localhost:8080 to retrieve the due plants as JSON. Request `GET /health` to get a 204 response without a body. Other paths return 404. **[Verify]** If you changed the configured port, use that port instead of 8080.
+
+9. **When upgrading, update clients and configuration deliberately.** The README points to `docs/upgrade.md` for the interval-key rename, the `/api/reminders` path, the PyYAML dependency, and plant-data migration. Apply those notes to existing installations rather than assuming files and clients from an earlier revision remain compatible.

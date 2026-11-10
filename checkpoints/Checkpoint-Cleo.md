@@ -1,121 +1,117 @@
 ## Commit `995d5cd` — 2026-11-10
 
 ## Context
-The commit frames Sprout as a public demo of Checkpoint running against its fictional project history. The README now says generated commit and PR summaries, returning-author briefings, and onboarding material demonstrate the tool’s output. The change is documentation-only; the diff does not include a workflow or application-code change.
+The commit message says this change runs Checkpoint on Sprout’s history. The README now presents Sprout as a public demo of Checkpoint in GitHub Actions, using `checkpoint-agent 1.2.6`, rather than leading with the fictional service’s maintenance and setup history.
 
 ## Changes
-- `README.md`: Replaces the fictional project-maintenance introduction with a description of Sprout as a plant-reminder API and links to Checkpoint and `checkpoint-agent 1.2.6`.
-- `README.md`: Documents `checkpoints/`, `catchups/`, and `MASTER_CONTEXT.md` as Checkpoint output locations, and identifies the October 2026 history as fictional.
-- `README.md`: Keeps installation, test, server, and upgrade instructions, but removes the PyYAML/settings details, the `/api/reminders` request example, the `/health` behavior, and the note about `plants.json`.
+- `README.md`: Replaces the project background and detailed installation, configuration, API, health-check, test, and upgrade notes. It describes Checkpoint’s outputs in `checkpoints/`, `catchups/`, and `MASTER_CONTEXT.md`, and says the October 2026 commits are fictional while the generated documents come from live Checkpoint runs. It retains installation, test, server, and upgrade instructions in shorter form. No functions or classes are changed.
 
 ## Impact
-The README now points readers to the described Checkpoint artifacts and identifies the demo’s fictional history. The diff does not verify that those artifacts or a GitHub Actions workflow exist. Likely: readers returning to the project will rely less on the README for configuration and endpoint details.
+- Confirmed: README readers are directed to the Checkpoint-generated summaries and onboarding guide, and can still find basic run and upgrade instructions.
+- Likely: Returning contributors will use `catchups/` and `MASTER_CONTEXT.md` as their entry points instead of relying on the removed project-history details.
+- The diff changes documentation only; it does not show a GitHub Actions workflow or application-code changes.
 
 ## Priority Rating
-LOW — This change updates project framing and documentation without changing application behavior.
+LOW — This is a README-only change that explains the Checkpoint demo without altering application behavior.
 
 ---
 
-## Commit `ee814c0` — 2026-11-10
+## Commit `ee814c0` — 2026-10-08
 
 ## Context
-This commit documents upgrade steps for maintainers returning to existing installations. The README now points readers to a dedicated upgrade guide and calls out the migration actions before they resume using the service.
+The commit documents the upgrade path for maintainers returning to an existing installation. The README now calls out configuration, API, dependency, and plant-data steps, and clarifies that `plants.json` is sample data rather than a production database.
 
 ## Changes
-- `README.md`: Adds a link to `docs/upgrade.md` and lists the upgrade sequence: rename the interval key, switch clients to `GET /api/reminders`, install PyYAML, then migrate plant data. It also documents that `GET /health` returns 204 without opening the data file. No function or class changes are shown.
+- `README.md`: Adds upgrade guidance pointing to `docs/upgrade.md`: rename the interval key, switch clients to `/api/reminders`, install PyYAML, and migrate plant data. It also documents that `GET /health` returns 204 without opening the data file. No functions or classes are changed in this diff.
 
 ## Impact
-- Confirmed: The README now directs existing users to the upgrade guide and names the required actions and endpoint.
-- Confirmed: The README distinguishes tracked `plants.json` as sample data, not a production database.
-- Likely: The checklist helps returning maintainers avoid missing compatibility and dependency changes during an upgrade.
+The README now directs existing-installation maintainers to the stated upgrade steps and records the health endpoint’s behavior. The diff does not implement those steps or change endpoint behavior; it only documents them. Likely: this will help returning maintainers identify migration work before running the updated service.
 
 ## Priority Rating
-LOW — This is documentation-only; it clarifies upgrade steps without changing application behavior.
+LOW — This is a documentation-only change; it does not alter application code or introduce runtime behavior.
 
 ---
 
-## Commit `277188e` — 2026-11-10
-
-## Context (background on why this change exists — infer from the commit message and diff)
-
-The commit adds focused coverage for the migration behavior named in the message: preserving a backup and safely handling repeated migration. The new tests exercise `sprout.migrate.migrate` against temporary `plants.json` files, so they check these cases without relying on a repository data file. No migration implementation changes are included in this diff; it documents expected behavior through tests.
-
-## Changes (grouped by file with specific function/class names)
-
-- `tests/test_migration.py` adds `MigrationTests`, a `unittest.TestCase` with two tests.
-- `MigrationTests.test_backup_and_repeat_are_safe` writes a legacy plant record containing `watered_at`, then checks that `migrate(path)` returns `True`, creates a `.json.bak` file containing the original bytes, and writes `last_watered` as `2026-10-01` in the migrated JSON. It then calls `migrate(path)` again and expects `False`.
-- `MigrationTests.test_existing_backup_prevents_overwrite` creates a source file and an existing `.json.bak` containing `keep`. It expects `migrate(path)` to raise `FileExistsError` and verifies that the source file remains unchanged.
-
-Both tests use `tempfile.TemporaryDirectory` and `pathlib.Path` to isolate their files. The first test uses `json.loads` to check the migrated field.
-
-## Impact (confirmed downstream effects from the diff; mark inferred impacts with 'Likely:')
-
-The test suite now checks the return values for first and repeated migration, the backup’s contents, conversion from `watered_at` to `last_watered`, and preservation of the source when a backup already exists. These are assertions in the added tests; the diff does not show a change to `migrate` itself or confirm that the tests have been run.
-
-Likely: these checks will catch regressions that overwrite an existing backup, fail to preserve the original data, or repeat a migration that should be a no-op.
-
-## Priority Rating (one of: CRITICAL / HIGH / MEDIUM / LOW with one sentence justification)
-
-MEDIUM — the tests cover data preservation and repeat-run safety, but the diff adds verification only and does not change migration behavior.
-
----
-
-## Commit `ef1521b` — 2026-11-10
-
-## Context (background on why this change exists — infer from the commit message and diff)
-
-The commit adds YAML support for the plant-watering service’s settings. Previously, settings were stored in `settings.json` and `load_settings` parsed them as JSON. The change moves the settings file to YAML and adds PyYAML as a project dependency, so developers also need updated setup instructions.
-
-## Changes (grouped by file with specific function/class names)
-
-- `requirements.txt`: Adds the pinned dependency `PyYAML==6.0.3`.
-- `settings.json` and `settings.yaml`: Removes the JSON settings file and adds YAML settings with the same values: `watering_interval_days: 7` and `port: 8080`.
-- `sprout/reminders.py`: `load_settings` now defaults to `Path('settings.yaml')` and parses the file with `yaml.safe_load` instead of `json.loads`. The module imports `yaml`. `load_plants` is unchanged.
-- `README.md`: Documents installing dependencies with `python -m pip install -r requirements.txt` and notes that settings live in `settings.yaml` and require PyYAML.
-
-## Impact (confirmed downstream effects from the diff; mark inferred impacts with 'Likely:')
-
-Confirmed: Calling `load_settings()` now reads `settings.yaml` by default and uses PyYAML to parse it. Installing from `requirements.txt` installs the parser version specified by the project. The documented setup path now includes dependency installation.
-
-Likely: Code or scripts that expect `settings.json`, or call `load_settings` with JSON-formatted settings, will need updating. Deployments must include `settings.yaml` and install the requirements for settings loading to work.
-
-## Priority Rating
-
-MEDIUM — Settings loading and setup documentation change together, but the new dependency and configuration file must be present for the service to load settings successfully.
-
----
-
-## Commit `3894c30` — 2026-11-10
+## Commit `277188e` — 2026-10-08
 
 ## Context
-`due_plants` in `sprout/reminders.py` checks whether a plant’s watering interval has elapsed. The previous strict comparison excluded plants whose next watering date was exactly today, despite the commit’s goal of including plants due on the current day.
+
+The commit adds regression tests for migration behavior, as indicated by `test: verify migration backup and idempotency`. The tests exercise `sprout.migrate.migrate` against temporary `plants.json` files. They cover two cases: a successful migration that preserves the original file as a backup and can be run again safely, and an existing backup that must not be overwritten. The diff changes tests only; it does not show the migration implementation.
 
 ## Changes
-- `sprout/reminders.py` — `due_plants`: changed the due-date comparison from `< today` to `<= today`. A plant is now included when `watered_at` plus `watering_interval_days` equals today, as well as when that date is earlier.
+
+- `tests/test_migration.py` adds `MigrationTests`, a `unittest.TestCase` class with two tests.
+- `MigrationTests.test_backup_and_repeat_are_safe` writes a plant record with `watered_at` to a temporary file, then checks that `migrate(path)` returns `True`. It verifies that the `.json.bak` file contains the exact original bytes, that the migrated JSON has `last_watered` set to `2026-10-01`, and that a second call returns `False`.
+- `MigrationTests.test_existing_backup_prevents_overwrite` creates both a source file and a `.json.bak` file containing `keep`. It checks that `migrate(path)` raises `FileExistsError` and that the source file remains unchanged.
 
 ## Impact
-- Confirmed: `due_plants` returns plants due today alongside overdue plants.
-- Likely: Callers that use this function to show or send watering reminders will now include reminders scheduled for today. The diff does not show changes to those callers or their behavior.
+
+- Confirmed: The new tests specify expected behavior for backup creation, migration of the `watered_at` field to `last_watered`, repeat-call handling, and refusal to overwrite an existing backup.
+- Confirmed: These checks use temporary directories, so the test fixtures do not write their plant files into the working tree.
+- Likely: The tests make regressions in backup safety or repeated migration easier to detect when the test suite runs; the diff does not show whether or how the suite is run in CI.
 
 ## Priority Rating
-LOW — This corrects a one-day boundary condition in due-plant selection without changing interval calculation or plant data.
+
+MEDIUM — The tests protect data-preservation and repeat-run behavior, but the diff adds no migration implementation changes.
 
 ---
 
-## Commit `b26f83c` — 2026-11-10
+## Commit `ef1521b` — 2026-10-07
 
 ## Context
-The configuration key for the watering reminder interval has been renamed from `reminder_days` to `watering_interval_days`. The configured value remains seven days. The upgrade note makes the required migration explicit: rename the key before starting the service.
+
+The commit adds YAML support for the plant-watering service’s settings. Before this change, `settings.json` held the watering interval and HTTP port, and `sprout/reminders.py` parsed it as JSON. The commit replaces that settings file with `settings.yaml` and adds PyYAML as a project dependency. The README now documents how to install dependencies and where settings live.
 
 ## Changes
-- `settings.json`: Replaces `reminder_days` with `watering_interval_days`; leaves `port` unchanged.
-- `sprout/reminders.py`: In `due_plants`, builds the interval from `settings['watering_interval_days']` instead of `settings['reminder_days']`. The date comparison and plant selection logic are unchanged.
-- `docs/upgrade.md`: Adds an upgrade instruction to rename the setting before starting the service.
+
+- **`requirements.txt`** — Adds the pinned dependency `PyYAML==6.0.3`, providing the YAML parser used by the service.
+- **`settings.json`** — Removes the JSON settings file, which contained `watering_interval_days: 7` and `port: 8080`.
+- **`settings.yaml`** — Adds those same two settings in YAML format, preserving their values.
+- **`sprout/reminders.py`** — Updates `load_settings` to default to `Path('settings.yaml')` instead of `Path('settings.json')`. The function now parses the file with `yaml.safe_load` rather than `json.loads`. The separate `load_plants` function and its `plants.json` default are unchanged.
+- **`README.md`** — Adds the dependency installation command, `python -m pip install -r requirements.txt`, and explains that settings are in `settings.yaml` and require PyYAML. The existing server, API, and test commands remain in place.
 
 ## Impact
-- Confirmed: `due_plants` now reads the renamed setting, and the checked-in configuration uses that name.
-- Confirmed: The configured interval and service port values are unchanged.
-- Likely: Existing external settings files that still use `reminder_days` will fail when `due_plants` accesses the new key unless they are updated first.
+
+- **Confirmed:** A no-argument call to `load_settings` now reads `settings.yaml` and returns its contents parsed as YAML. The service’s settings values remain 7 days and port 8080.
+- **Confirmed:** The documented setup now installs PyYAML before running the service; `settings.json` is no longer present in the diff.
+- **Likely:** Callers that pass a custom path to `load_settings` must now provide YAML-formatted content, since parsing uses `yaml.safe_load` regardless of the path.
+- **Likely:** Environments that run the service without installing `requirements.txt` will fail to import `sprout/reminders.py` if PyYAML is unavailable.
 
 ## Priority Rating
-MEDIUM — the code and checked-in settings agree, but deployments using the old key need a configuration change before service startup.
+
+LOW — The change is limited to settings format, dependency setup, and documentation, while preserving the existing configuration values and run instructions.
+
+---
+
+## Commit `3894c30` — 2026-10-06
+
+## Context
+The reminder date check excluded plants whose watering date landed exactly on `today`: `due_plants` required the calculated date to be strictly earlier. The commit message identifies the intended correction: include plants due on the current day.
+
+## Changes
+- `sprout/reminders.py` — In `due_plants(plants, today, settings)`, the comparison changed from `< today` to `<= today`. The function still calculates the due date by adding `settings['watering_interval_days']` to each plant’s `watered_at` date.
+
+## Impact
+- Confirmed: `due_plants` now returns a plant when its calculated watering date equals `today`, as well as when that date has passed.
+- Likely: Any reminder behavior driven by `due_plants` will now include plants on their due date, preventing them from being omitted until the following day.
+
+## Priority Rating
+LOW — This is a focused boundary-condition fix that makes current-day-due plants eligible without changing the date calculation or settings.
+
+---
+
+## Commit `b26f83c` — 2026-10-05
+
+## Context
+The commit renames the watering reminder interval setting to `watering_interval_days`. The new name describes what the value controls more specifically than `reminder_days`. The upgrade note tells operators to rename the setting before starting the service.
+
+## Changes
+- `settings.json`: Renames `reminder_days` to `watering_interval_days`; the configured value remains 7, and `port` remains 8080.
+- `sprout/reminders.py`: `due_plants()` now reads `settings['watering_interval_days']` when building the `timedelta`. The due-date comparison is unchanged.
+- `docs/upgrade.md`: Adds an upgrade instruction to rename the old setting before starting the service.
+
+## Impact
+`due_plants()` now requires callers to provide `watering_interval_days` in `settings`; with the updated configuration, the interval remains seven days. **Likely:** Deployments still using `reminder_days` will raise a `KeyError` when `due_plants()` accesses the missing key.
+
+## Priority Rating
+MEDIUM — The rename requires a configuration update, but the upgrade note documents the required step and the default interval is unchanged.
